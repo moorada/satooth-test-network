@@ -1,0 +1,133 @@
+# Copyright 2017 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ------------------------------------------------------------------------------
+
+version: "3.6"
+
+networks:
+  grafana-net:
+  #  external: true
+volumes:
+  influxdb:
+
+services:
+  influxdb:
+    image: influxdb:1.8-alpine
+    networks:
+      - grafana-net
+    volumes:
+      - influxdb:/var/lib/influxdb
+    ports: [ "8086:8086" ]
+    environment:
+      - INFLUXDB_DB=metrics
+      - INFLUXDB_AUTH_ENABLED=false
+      - INFLUXDB_HTTP_AUTH_ENABLED=false
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=admin-psw
+      - INFLUXDB_USER=lrdata
+      - INFLUXDB_USER_PASSWORD=lrdata-psw
+    stop_signal: SIGKILL
+
+  grafana:
+    image: moorada/sawtooth-grafana:latest
+    ports: [ "3000:3000" ]
+    networks:
+      - grafana-net
+    # volumes:
+    #   - ~/sawtooth/sawtooth-core:/project/sawtooth-core
+    depends_on:
+      - influxdb
+    stop_signal: SIGKILL
+
+  settings-tp:
+    image: hyperledger/sawtooth-settings-tp:chime
+    networks:
+      - grafana-net
+    depends_on:
+      - validator
+    entrypoint: settings-tp -vv -C tcp://validator:4004
+
+  intkey-tp-python:
+    image: hyperledger/sawtooth-intkey-tp-python:chime
+    networks:
+      - grafana-net
+    depends_on:
+      - validator
+    entrypoint: intkey-tp-python -vv -C tcp://validator:4004
+
+  xo-tp-python:
+    image: hyperledger/sawtooth-xo-tp-python:chime
+    networks:
+      - grafana-net
+    depends_on:
+      - validator
+    entrypoint: xo-tp-python -vv -C tcp://validator:4004
+
+  validator:
+    image: hyperledger/sawtooth-validator:chime
+    networks:
+      - grafana-net
+    # start the validator with an empty genesis batch
+    entrypoint: "bash -c \"\
+        sawadm keygen && \
+        sawtooth keygen my_key && \
+        sawset genesis -k /root/.sawtooth/keys/my_key.priv && \
+        sawset proposal create \
+          -k /root/.sawtooth/keys/my_key.priv \
+          sawtooth.consensus.algorithm.name=Devmode \
+          sawtooth.consensus.algorithm.version=0.1 \
+          -o config.batch && \
+        sawadm genesis config-genesis.batch config.batch && \
+        sawtooth-validator -vv \
+          --endpoint tcp://validator:8800 \
+          --bind component:tcp://0.0.0.0:4004 \
+          --bind network:tcp://0.0.0.0:8800 \
+          --bind consensus:tcp://0.0.0.0:5050 \
+          --opentsdb-url http://influxdb:8086 \
+          --opentsdb-db metrics \
+        \""
+
+  devmode-engine:
+    image: hyperledger/sawtooth-devmode-engine-rust:chime
+    networks:
+      - grafana-net
+    depends_on:
+      - validator
+    entrypoint: devmode-engine-rust -C tcp://validator:5050
+
+  rest-api:
+    image: hyperledger/sawtooth-rest-api:chime
+    depends_on:
+      - validator
+    networks:
+      - grafana-net
+    entrypoint: "bash -c \"
+      sawtooth-rest-api -vv \
+        --connect tcp://validator:4004 \
+        --bind 0.0.0.0:8008 \
+        --opentsdb-url http://influxdb:8086 \
+        --opentsdb-db metrics \
+    \""
+    #entrypoint: sawtooth-rest-api -C tcp://validator:4004 --bind 0.0.0.0:8008
+
+  shell:
+    image: hyperledger/sawtooth-shell:chime
+    networks:
+      - grafana-net
+    depends_on:
+      - rest-api
+    entrypoint: "bash -c \"\
+        sawtooth keygen && \
+        tail -f /dev/null \
+        \""
