@@ -24,6 +24,7 @@ volumes:
     influxdb:
 
 services:
+
   shell:
     image: moorada/sawtooth-shell
     deploy:
@@ -40,6 +41,24 @@ services:
         sawtooth keygen && \
         tail -f /dev/null \
         \""
+
+  telegraf:
+    image: telegraf
+    deploy:
+      placement:
+        constraints: [node.hostname == node-nuc1]
+    networks:
+      - sawtooth_network
+    environment:
+      HOST_PROC: /rootfs/proc
+      HOST_SYS: /rootfs/sys
+      HOST_ETC: /rootfs/etc
+    volumes:
+     - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+     - /var/run/docker.sock:/var/run/docker.sock:ro
+     - /sys:/rootfs/sys:ro
+     - /proc:/rootfs/proc:ro
+     - /etc:/rootfs/etc:ro
 
   influxdb:
     image: influxdb:1.8-alpine
@@ -69,8 +88,6 @@ services:
     ports: [ "3000:3000" ]
     networks:
       - sawtooth_network
-    volumes:
-      - ~/sawtooth/sawtooth-core:/project/sawtooth-core
     depends_on:
       - influxdb
     stop_signal: SIGKILL
