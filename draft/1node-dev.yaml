@@ -59,6 +59,8 @@ services:
     ports: [ "3000:3000" ]
     networks:
       - grafana-net
+    # volumes:
+    #   - ~/sawtooth/sawtooth-core:/project/sawtooth-core
     depends_on:
       - influxdb
     stop_signal: SIGKILL
@@ -80,12 +82,12 @@ services:
     entrypoint: intkey-tp-python -vv -C tcp://validator:4004
 
   auction-tp-go:
-    image: moorada/sawtooth-auction-tp-go
-    container_name: sawtooth-auction-tp-go-default
+    image: moorada/sawtooth-auction-tp
+    networks:
+      - grafana-net
     depends_on:
       - validator
     entrypoint: auction -vv -C tcp://validator:4004
-
 
   xo-tp-python:
     image: hyperledger/sawtooth-xo-tp-python:chime
@@ -99,6 +101,7 @@ services:
     image: hyperledger/sawtooth-validator:chime
     networks:
       - grafana-net
+    # start the validator with an empty genesis batch
     entrypoint: "bash -c \"\
         sawadm keygen && \
         sawtooth keygen my_key && \
@@ -139,14 +142,40 @@ services:
         --opentsdb-url http://influxdb:8086 \
         --opentsdb-db metrics \
     \""
+    #entrypoint: sawtooth-rest-api -C tcp://validator:4004 --bind 0.0.0.0:8008
 
-  shell:
-    image: hyperledger/sawtooth-shell:chime
-    networks:
-      - grafana-net
+
+  my-shell:
+    image: moorada/shellauction:latest
     depends_on:
       - rest-api
+    networks:
+      - grafana-net
     entrypoint: "bash -c \"\
-        sawtooth keygen && \
         tail -f /dev/null \
         \""
+
+
+  # shell:
+  #   image: hyperledger/sawtooth-shell:chime
+  #   networks:
+  #     - grafana-net
+  #   depends_on:
+  #     - rest-api
+  #   entrypoint: "bash -c \"\
+  #       sawtooth keygen && \
+  #       tail -f /dev/null \
+  #       \""
+
+  # my-shell:
+  #   image: moorada/sawtooth-shell
+  #   depends_on:
+  #     - rest-api
+  #   networks:
+  #     - grafana-net
+  #   entrypoint: "bash -c \"\
+  #       sawtooth keygen && \
+  #       tail -f /dev/null \
+  #       \""
+
+
